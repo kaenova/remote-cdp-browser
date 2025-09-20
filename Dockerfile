@@ -17,8 +17,6 @@ RUN apt-get update && apt-get install -y \
     && wget -q -O chrome.deb https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb \
     && apt-get install -y ./chrome.deb \
     && rm chrome.deb \
-    && curl -fsSL https://bun.sh/install | bash \
-    && apt-get purge -y wget \
     && apt-get autoremove -y \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
