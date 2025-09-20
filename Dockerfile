@@ -64,9 +64,6 @@ COPY start.sh ./
 # Make start script executable
 RUN chmod +x start.sh
 
-# Build the application
-RUN bun run build
-
 # Create a non-root user for running Chrome (security best practice)
 RUN groupadd -r chromeuser && useradd -r -g chromeuser -G audio,video chromeuser \
     && mkdir -p /home/chromeuser/Downloads /app/chrome-data \
