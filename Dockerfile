@@ -60,8 +60,6 @@ RUN bun install
 # Copy source code
 COPY src/ ./src/
 COPY start.sh ./
-COPY README.md ./
-COPY .env.example ./
 
 # Make start script executable
 RUN chmod +x start.sh
