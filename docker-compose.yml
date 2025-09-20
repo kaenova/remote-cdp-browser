@@ -11,11 +11,11 @@ services:
       - CHROME_PORT=9222
       - PROXY_PORT=8080
       - HEADLESS=true
-      - USER_DATA_DIR=/app/chrome-data
+      - USER_DATA_DIR=/app/data
       - DOCKER_CONTAINER=true
     volumes:
       # Optional: Persist Chrome data
-      - chrome-data:/app/chrome-data
+      - chrome-data:/app/data
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/json/version"]

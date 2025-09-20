@@ -1,113 +1,56 @@
-# Use Ubuntu as base image for better Chrome compatibility
+# Use Ubuntu minimal base image
 FROM ubuntu:22.04
 
 # Avoid prompts from apt
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y \
-    # Chrome dependencies
+# Install Chrome via .deb file and Bun in a single layer
+RUN apt-get update && apt-get install -y --no-install-recommends \
     wget \
-    gnupg \
-    ca-certificates \
-    apt-transport-https \
-    software-properties-common \
-    # Additional Chrome runtime dependencies
-    fonts-liberation \
-    libappindicator3-1 \
-    libasound2 \
-    libatk-bridge2.0-0 \
-    libatk1.0-0 \
-    libcups2 \
-    libdbus-1-3 \
-    libdrm2 \
-    libgtk-3-0 \
-    libnspr4 \
-    libnss3 \
-    libx11-xcb1 \
-    libxcomposite1 \
-    libxdamage1 \
-    libxrandr2 \
-    xdg-utils \
-    libxss1 \
-    libgconf-2-4 \
-    # System utilities
     curl \
-    unzip \
-    && rm -rf /var/lib/apt/lists/*
+    ca-certificates \
+    && wget -q -O chrome.deb https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb \
+    && apt-get install -y --no-install-recommends ./chrome.deb \
+    && rm chrome.deb \
+    && curl -fsSL https://bun.sh/install | bash \
+    && apt-get purge -y wget \
+    && apt-get autoremove -y \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
-# Install Google Chrome
-RUN wget -q -O - https://dl.google.com/linux/linux_signing_key.pub | apt-key add - \
-    && echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" >> /etc/apt/sources.list.d/google-chrome.list \
-    && apt-get update \
-    && apt-get install -y google-chrome-stable \
-    && rm -rf /var/lib/apt/lists/*
-
-# Install Bun
-RUN curl -fsSL https://bun.sh/install | bash
+# Add Bun to PATH
 ENV PATH="/root/.bun/bin:$PATH"
 
-# Create app directory
+# Set working directory
 WORKDIR /app
 
-# Copy package files
-COPY package.json ./
-COPY tsconfig.json ./
-
-# Install dependencies
-RUN bun install
+# Copy and install dependencies
+COPY package.json tsconfig.json ./
+RUN bun install --production
 
 # Copy source code
 COPY src/ ./src/
-COPY start.sh ./
 
-# Make start script executable
-RUN chmod +x start.sh
+# Create non-root user for Chrome
+RUN groupadd -r chrome && useradd -r -g chrome -G audio,video chrome \
+    && mkdir -p /home/chrome/.cache /app/data \
+    && chown -R chrome:chrome /home/chrome /app/data
 
-# Create a non-root user for running Chrome (security best practice)
-RUN groupadd -r chromeuser && useradd -r -g chromeuser -G audio,video chromeuser \
-    && mkdir -p /home/chromeuser/Downloads /app/chrome-data \
-    && chown -R chromeuser:chromeuser /home/chromeuser /app/chrome-data
-
-# Set environment variables
-ENV CHROME_PORT=9222
-ENV PROXY_PORT=8080
-ENV HEADLESS=true
-ENV USER_DATA_DIR=/app/chrome-data
+# Environment variables
+ENV CHROME_PORT=9222 \
+    PROXY_PORT=8080 \
+    HEADLESS=true \
+    USER_DATA_DIR=/app/data
 
 # Expose ports
 EXPOSE 8080 9222
 
 # Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+HEALTHCHECK --interval=30s --timeout=10s --retries=3 \
     CMD curl -f http://localhost:8080/json/version || exit 1
 
-# Create startup script that switches to non-root user for Chrome
-RUN echo '#!/bin/bash\n\
-set -e\n\
-\n\
-# Function to cleanup on exit\n\
-cleanup() {\n\
-    echo "Cleaning up..."\n\
-    pkill -f chrome || true\n\
-    exit 0\n\
-}\n\
-\n\
-# Set up signal handlers\n\
-trap cleanup SIGTERM SIGINT\n\
-\n\
-# Start the application\n\
-echo "Starting Remote CDP Browser in Docker..."\n\
-echo "Chrome CDP Port: $CHROME_PORT"\n\
-echo "Proxy Server Port: $PROXY_PORT"\n\
-echo "Headless Mode: $HEADLESS"\n\
-\n\
-# Run as root but Chrome will be launched by the chromeuser\n\
-exec bun run src/index.ts --chrome-port "$CHROME_PORT" --proxy-port "$PROXY_PORT" --headless "$HEADLESS"\n\
-' > /app/docker-entrypoint.sh && chmod +x /app/docker-entrypoint.sh
+# Switch to non-root user
+USER chrome
 
-# Switch to non-root user for final operations
-USER chromeuser
-
-# Default command
-CMD ["/app/docker-entrypoint.sh"]
+# Start command
+CMD ["bun", "run", "src/index.ts"]
