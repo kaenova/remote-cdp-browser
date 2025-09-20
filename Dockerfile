@@ -1,25 +1,13 @@
-# Use Ubuntu minimal base image
-FROM ubuntu:22.04
+# Use linuxserver/chrome base image (already has Chrome installed)
+FROM linuxserver/chrome:latest
 
-# Avoid prompts from apt
-ENV DEBIAN_FRONTEND=noninteractive
-
-# Update
-RUN apt-get update
-
-# Install Bun in a single layer
-RUN apt-get install -y curl unzip \
-    && curl -fsSL https://bun.sh/install | bash
-
-# Install Chrome via .deb file in a single layer
-RUN apt-get update && apt-get install -y \
-    wget \
-    && wget -q -O chrome.deb https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb \
-    && apt-get install -y ./chrome.deb \
-    && rm chrome.deb \
-    && apt-get autoremove -y \
+# Install Bun
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    unzip \
+    && curl -fsSL https://bun.sh/install | bash \
     && apt-get clean \
-    && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+    && rm -rf /var/lib/apt/lists/*
 
 # Add Bun to PATH
 ENV PATH="/root/.bun/bin:$PATH"
@@ -34,10 +22,9 @@ RUN bun install --production
 # Copy source code
 COPY src/ ./src/
 
-# Create non-root user for Chrome
-RUN groupadd -r chrome && useradd -r -g chrome -G audio,video chrome \
-    && mkdir -p /home/chrome/.cache /app/data \
-    && chown -R chrome:chrome /home/chrome /app/data
+# Create data directory and set permissions
+RUN mkdir -p /app/data \
+    && chown -R abc:abc /app/data
 
 # Environment variables
 ENV CHROME_PORT=9222 \
@@ -52,8 +39,8 @@ EXPOSE 8080 9222
 HEALTHCHECK --interval=30s --timeout=10s --retries=3 \
     CMD curl -f http://localhost:8080/json/version || exit 1
 
-# Switch to non-root user
-USER chrome
+# Switch to non-root user (abc is the default user in linuxserver/chrome)
+USER abc
 
 # Start command
 CMD ["bun", "run", "src/index.ts"]
