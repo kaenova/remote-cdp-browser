@@ -1,0 +1,29 @@
+version: '3.8'
+
+services:
+  remote-cdp-browser:
+    build: .
+    container_name: remote-cdp-browser
+    ports:
+      - "8080:8080"  # Proxy server port
+      - "9222:9222"  # Chrome CDP port
+    environment:
+      - CHROME_PORT=9222
+      - PROXY_PORT=8080
+      - HEADLESS=true
+      - USER_DATA_DIR=/app/chrome-data
+      - DOCKER_CONTAINER=true
+    volumes:
+      # Optional: Persist Chrome data
+      - chrome-data:/app/chrome-data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/json/version"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  chrome-data:
+    driver: local
