@@ -6,7 +6,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     unzip \
     && curl -fsSL https://bun.sh/install | bash -s "bun-v1.1.29" \
-    && mv /root/.bun/bin/bun /usr/local/bin/bun \
+    && mv ~/.bun/bin/bun /usr/local/bin/bun \
     && chmod +x /usr/local/bin/bun \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /root/.bun
