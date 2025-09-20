@@ -4,11 +4,16 @@ FROM ubuntu:22.04
 # Avoid prompts from apt
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Install Chrome via .deb file and Bun in a single layer
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# Update
+RUN apt-get update
+
+# Install Bun in a single layer
+RUN apt-get install -y curl unzip \
+    && curl -fsSL https://bun.sh/install | bash
+
+# Install Chrome via .deb file in a single layer
+RUN apt-get update && apt-get install -y \
     wget \
-    curl \
-    unzip \
     && wget -q -O chrome.deb https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb \
     && apt-get install -y ./chrome.deb \
     && rm chrome.deb \
