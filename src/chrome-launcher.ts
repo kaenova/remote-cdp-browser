@@ -57,11 +57,29 @@ export class ChromeLauncher {
   }
 
   /**
+   * Check if Chrome CDP is already running on the port
+   */
+  private async isChromeRunning(): Promise<boolean> {
+    try {
+      const response = await fetch(`http://localhost:${this.port}/json/version`);
+      return response.ok;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
    * Launch Chrome with CDP enabled
    */
   async launch(): Promise<void> {
     if (this.chromeProcess) {
       console.log("Chrome is already running");
+      return;
+    }
+
+    // Check if Chrome CDP is already running (e.g., in linuxserver/chrome container)
+    if (await this.isChromeRunning()) {
+      console.log(`Chrome CDP is already running on port ${this.port}`);
       return;
     }
 
