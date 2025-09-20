@@ -1,16 +1,15 @@
 # Use linuxserver/chrome base image (already has Chrome installed)
 FROM linuxserver/chrome:latest
 
-# Install Bun
+# Install Bun globally
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     unzip \
-    && curl -fsSL https://bun.sh/install | bash \
+    && curl -fsSL https://bun.sh/install | bash -s "bun-v1.1.29" \
+    && mv /root/.bun/bin/bun /usr/local/bin/bun \
+    && chmod +x /usr/local/bin/bun \
     && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
-
-# Add Bun to PATH
-ENV PATH="/root/.bun/bin:$PATH"
+    && rm -rf /var/lib/apt/lists/* /root/.bun
 
 # Set working directory
 WORKDIR /app
