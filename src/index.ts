@@ -5,6 +5,8 @@ interface AppConfig {
   chromePort: number;
   proxyPort: number;
   headless: boolean;
+  proxyUsername?: string;
+  proxyPassword?: string;
 }
 
 class RemoteCdpBrowser {
@@ -28,6 +30,8 @@ class RemoteCdpBrowser {
       port: this.config.proxyPort,
       targetHost: "localhost",
       targetPort: this.config.chromePort,
+      username: this.config.proxyUsername,
+      password: this.config.proxyPassword,
     });
   }
 
@@ -39,6 +43,11 @@ class RemoteCdpBrowser {
     console.log(`Chrome CDP Port: ${this.config.chromePort}`);
     console.log(`Proxy Server Port: ${this.config.proxyPort}`);
     console.log(`Headless: ${this.config.headless}`);
+    if (this.config.proxyUsername && this.config.proxyPassword) {
+      console.log(`Proxy Authentication: ${this.config.proxyUsername}:***`);
+    } else {
+      console.log(`Proxy Authentication: Disabled`);
+    }
     console.log("");
 
     try {
@@ -127,6 +136,12 @@ function parseArgs(): Partial<AppConfig> {
       case "--headless":
         config.headless = args[++i] !== "false";
         break;
+      case "--proxy-username":
+        config.proxyUsername = args[++i];
+        break;
+      case "--proxy-password":
+        config.proxyPassword = args[++i];
+        break;
       case "--help":
         console.log(`
 Remote CDP Browser
@@ -134,15 +149,18 @@ Remote CDP Browser
 Usage: bun run src/index.ts [options]
 
 Options:
-  --chrome-port <port>    Chrome CDP port (default: 9222)
-  --proxy-port <port>     Proxy server port (default: 8080) 
-  --headless <boolean>    Run Chrome in headless mode (default: false)
-  --help                  Show this help message
+  --chrome-port <port>       Chrome CDP port (default: 9222)
+  --proxy-port <port>        Proxy server port (default: 8080) 
+  --headless <boolean>       Run Chrome in headless mode (default: false)
+  --proxy-username <user>    Proxy authentication username
+  --proxy-password <pass>    Proxy authentication password
+  --help                     Show this help message
 
 Examples:
   bun run src/index.ts
   bun run src/index.ts --chrome-port 9223 --proxy-port 8081
   bun run src/index.ts --headless true
+  bun run src/index.ts --proxy-username user --proxy-password pass
         `);
         process.exit(0);
         break;
@@ -157,6 +175,15 @@ Examples:
  */
 async function main(): Promise<void> {
   const config = parseArgs();
+  
+  // Override with environment variables if available
+  if (process.env.PROXY_USERNAME && !config.proxyUsername) {
+    config.proxyUsername = process.env.PROXY_USERNAME;
+  }
+  if (process.env.PROXY_PASSWORD && !config.proxyPassword) {
+    config.proxyPassword = process.env.PROXY_PASSWORD;
+  }
+  
   const app = new RemoteCdpBrowser(config);
 
   // Handle graceful shutdown

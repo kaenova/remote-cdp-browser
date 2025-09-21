@@ -5,6 +5,8 @@ export interface ProxyServerOptions {
   port?: number;
   targetHost?: string;
   targetPort?: number;
+  username?: string;
+  password?: string;
 }
 
 interface WebSocketData {
@@ -16,11 +18,15 @@ export class ProxyServer {
   private readonly port: number;
   private readonly targetHost: string;
   private readonly targetPort: number;
+  private readonly username?: string;
+  private readonly password?: string;
 
   constructor(options: ProxyServerOptions = {}) {
     this.port = options.port ?? 8080;
     this.targetHost = options.targetHost ?? "localhost";
     this.targetPort = options.targetPort ?? 9222;
+    this.username = options.username;
+    this.password = options.password;
   }
 
   /**
@@ -55,61 +61,76 @@ export class ProxyServer {
   }
 
   /**
-   * Handle incoming requests and forward them to Chrome CDP
+   * Authenticate proxy request
+   */
+  private authenticateRequest(request: Request): boolean {
+    // If no auth is configured, allow all requests
+    if (!this.username || !this.password) {
+      return true;
+    }
+
+    const authHeader = request.headers.get("Proxy-Authorization");
+    if (!authHeader) {
+      return false;
+    }
+
+    const [type, credentials] = authHeader.split(" ");
+    if (type !== "Basic") {
+      return false;
+    }
+
+    try {
+      const decoded = atob(credentials);
+      const [username, password] = decoded.split(":");
+      return username === this.username && password === this.password;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Create authentication required response
+   */
+  private createAuthRequiredResponse(): Response {
+    return new Response("Proxy Authentication Required", {
+      status: 407,
+      headers: {
+        "Proxy-Authenticate": "Basic realm=\"Proxy\"",
+        "Content-Type": "text/plain",
+      },
+    });
+  }
+
+  /**
+   * Handle incoming requests (both regular HTTP and CONNECT)
    */
   private async handleRequest(request: Request): Promise<Response> {
     try {
+      // Check authentication first
+      if (!this.authenticateRequest(request)) {
+        console.log(`Authentication failed for ${request.method} ${request.url}`);
+        return this.createAuthRequiredResponse();
+      }
+
       const url = new URL(request.url);
       
-      // // Serve the test interface at the root path
-      // if (url.pathname === "/" || url.pathname === "/index.html") {
-      //   return this.serveTestInterface();
-      // }
+      // Serve the test interface at the root path for CDP management
+      if (url.pathname === "/" || url.pathname === "/index.html") {
+        return this.serveTestInterface();
+      }
+      
+      // Handle CONNECT method for HTTPS tunneling
+      if (request.method === "CONNECT") {
+        return this.handleConnect(request);
+      }
       
       // Check if this is a WebSocket upgrade request
       if (request.headers.get("upgrade")?.toLowerCase() === "websocket") {
         return this.handleWebSocketUpgrade(request);
       }
-      
-      // Construct the target URL
-      const targetUrl = new URL(url.pathname + url.search, `http://${this.targetHost}:${this.targetPort}`);
-      
-      // Create headers for the forwarded request (excluding host header)
-      const forwardHeaders = new Headers();
-      for (const [key, value] of request.headers.entries()) {
-        if (key.toLowerCase() !== "host") {
-          forwardHeaders.set(key, value);
-        }
-      }
 
-      // Create the forwarded request
-      const forwardedRequest = new Request(targetUrl.toString(), {
-        method: request.method,
-        headers: forwardHeaders,
-        body: request.body,
-      });
-
-      console.log(`${request.method} ${url.pathname} -> ${targetUrl.toString()}`);
-
-      // Forward the request to Chrome CDP
-      const response = await fetch(forwardedRequest);
-
-      // Create response with the same status and headers
-      const responseHeaders = new Headers();
-      for (const [key, value] of response.headers.entries()) {
-        responseHeaders.set(key, value);
-      }
-
-      // Add CORS headers if needed
-      responseHeaders.set("Access-Control-Allow-Origin", "*");
-      responseHeaders.set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
-      responseHeaders.set("Access-Control-Allow-Headers", "*");
-
-      return new Response(response.body, {
-        status: response.status,
-        statusText: response.statusText,
-        headers: responseHeaders,
-      });
+      // Handle regular HTTP proxy requests
+      return this.handleHttpProxy(request);
 
     } catch (error) {
       console.error("Error forwarding request:", error);
@@ -120,6 +141,89 @@ export class ProxyServer {
           "Access-Control-Allow-Origin": "*",
         }
       });
+    }
+  }
+
+  /**
+   * Handle CONNECT method for HTTPS tunneling
+   */
+  private async handleConnect(request: Request): Promise<Response> {
+    try {
+      const url = new URL(`http://${request.url}`);
+      const targetHost = url.hostname;
+      const targetPort = parseInt(url.port) || 443;
+
+      console.log(`CONNECT ${targetHost}:${targetPort}`);
+
+      // For now, return 200 Connection Established
+      // In a full implementation, you'd establish a TCP tunnel
+      return new Response(null, {
+        status: 200,
+        statusText: "Connection Established",
+      });
+    } catch (error) {
+      console.error("Error handling CONNECT:", error);
+      return new Response("Bad Gateway", { status: 502 });
+    }
+  }
+
+  /**
+   * Handle regular HTTP proxy requests
+   */
+  private async handleHttpProxy(request: Request): Promise<Response> {
+    try {
+      const url = new URL(request.url);
+      
+      // For absolute URLs, use them directly
+      // For relative URLs, construct target URL for CDP forwarding
+      let targetUrl: string;
+      if (url.protocol === "http:" || url.protocol === "https:") {
+        targetUrl = request.url;
+      } else {
+        // This is a CDP forwarding request
+        targetUrl = new URL(url.pathname + url.search, `http://${this.targetHost}:${this.targetPort}`).toString();
+      }
+      
+      // Create headers for the forwarded request
+      const forwardHeaders = new Headers();
+      for (const [key, value] of request.headers.entries()) {
+        // Skip proxy-specific headers
+        if (!key.toLowerCase().startsWith("proxy-")) {
+          forwardHeaders.set(key, value);
+        }
+      }
+
+      console.log(`${request.method} ${request.url} -> ${targetUrl}`);
+
+      // Forward the request
+      const response = await fetch(targetUrl, {
+        method: request.method,
+        headers: forwardHeaders,
+        body: request.body,
+      });
+
+      // Create response with the same status and headers
+      const responseHeaders = new Headers();
+      for (const [key, value] of response.headers.entries()) {
+        responseHeaders.set(key, value);
+      }
+
+      // Add CORS headers for CDP requests
+      if (targetUrl.includes(`${this.targetHost}:${this.targetPort}`)) {
+        responseHeaders.set("Access-Control-Allow-Origin", "*");
+        responseHeaders.set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+        responseHeaders.set("Access-Control-Allow-Headers", "*");
+      }
+
+      return new Response(response.body, {
+        status: response.status,
+        statusText: response.statusText,
+        headers: responseHeaders,
+      });
+
+    } catch (error) {
+      console.error("Error handling HTTP proxy:", error);
+      return new Response("Bad Gateway", { status: 502 });
     }
   }
 
