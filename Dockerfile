@@ -1,68 +1,80 @@
-# Use linuxserver/chrome base image (already has Chrome installed)
-FROM linuxserver/chrome:latest
+# syntax=docker/dockerfile:1
 
-# Install Bun globally
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl \
-    unzip \
-    && curl -fsSL https://bun.sh/install | bash -s "bun-v1.1.29" \
-    && mv ~/.bun/bin/bun /usr/local/bin/bun \
-    && chmod +x /usr/local/bin/bun \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/* /root/.bun
+# Build stage: Create a custom image with Chromium and 3proxy files
+FROM alpine:latest AS builder
 
-# Set working directory
-WORKDIR /app
+# Install Chromium and dependencies
+RUN apk add --no-cache \
+    chromium \
+    chromium-chromedriver \
+    font-noto-emoji \
+    ttf-dejavu \
+    ttf-droid \
+    ttf-freefont \
+    ttf-liberation \
+    wget \
+    && rm -rf /var/cache/apk/*
 
-# Copy and install dependencies
-COPY package.json tsconfig.json ./
-RUN bun install --production
+# Create users and groups
+RUN addgroup -g 10001 3proxy \
+    && adduser -D -G 3proxy -u 10001 3proxy \
+    && addgroup -g 10002 chrome \
+    && adduser -D -G chrome -u 10002 chrome
 
-# Copy source code
-COPY src/ ./src/
+# Create necessary directories
+RUN mkdir -p /tmp/chrome-data /etc/3proxy /usr/local/3proxy/libexec /bin \
+    && chown -R chrome:chrome /tmp/chrome-data \
+    && chmod 755 /tmp/chrome-data
 
-# Create data directory and set permissions
-RUN mkdir -p /app/data \
-    && chown -R abc:abc /app/data
+# Copy 3proxy files from the official image
+FROM tarampampam/3proxy:latest AS proxy-source
 
-# Environment variables for linuxserver/chrome
-ENV PUID=911 \
-    PGID=1000 \
-    TZ=Etc/UTC \
-    CHROME_CLI="--remote-debugging-port=9222 --remote-debugging-address=0.0.0.0 --no-sandbox --disable-setuid-sandbox --disable-dev-shm-usage --headless --disable-gpu"
+# Final stage: Combine everything
+FROM alpine:latest
 
-# Environment variables for our app
-ENV CHROME_PORT=9222 \
-    PROXY_PORT=8080 \
-    FORWARDER_PORT=8081 \
-    HEADLESS=true \
-    PROXY_USERNAME=proxy-user \
-    PROXY_PASSWORD=proxy-pass
+# Install runtime dependencies
+RUN apk add --no-cache \
+    chromium \
+    font-noto-emoji \
+    ttf-dejavu \
+    ttf-droid \
+    ttf-freefont \
+    ttf-liberation \
+    wget \
+    && rm -rf /var/cache/apk/*
 
-# Expose ports
-EXPOSE 8080 8081 9222 3000
+# Create users and groups
+RUN addgroup -g 10001 3proxy \
+    && adduser -D -G 3proxy -u 10001 3proxy \
+    && addgroup -g 10002 chrome \
+    && adduser -D -G chrome -u 10002 chrome
 
-# Create startup script
-COPY <<EOF /app/start.sh
-#!/bin/bash
-# Start the linuxserver chrome service in the background
-/init &
+# Create directories
+RUN mkdir -p /tmp/chrome-data /etc/3proxy /usr/local/3proxy/libexec /bin \
+    && chown -R chrome:chrome /tmp/chrome-data \
+    && chmod 755 /tmp/chrome-data \
+    && chown -R 3proxy:3proxy /etc/3proxy
 
-# Wait for Chrome to be ready
-echo "Waiting for Chrome to start..."
-sleep 10
+# Copy 3proxy binaries and configurations from the source image
+COPY --from=proxy-source /bin/3proxy /bin/3proxy
+COPY --from=proxy-source /bin/mustpl /bin/mustpl
+COPY --from=proxy-source /bin/dumb-init /bin/dumb-init
+COPY --from=proxy-source /usr/local/3proxy/libexec/ /usr/local/3proxy/libexec/
+COPY --from=proxy-source /etc/3proxy/ /etc/3proxy/
+COPY --from=proxy-source /lib/ /lib/
 
-# Start our proxy server
-echo "Starting proxy server..."
-cd /app
-exec bun run src/index.ts
-EOF
+# Copy startup script
+COPY entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh
 
-RUN chmod +x /app/start.sh
+# Expose proxy port (default: 3128) and Chrome CDP port
+EXPOSE 3128 9222
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --retries=3 \
-    CMD curl -f http://localhost:8080/json/version || curl -f http://localhost:9222/json/version || exit 1
+# Set environment variables
+ENV CHROME_PORT=9222
+ENV PROXY_PORT=3128
+ENV HEADLESS=true
+ENV USER_DATA_DIR=/tmp/chrome-data
 
-# Start command - use the startup script
-CMD ["/app/start.sh"]
+# Use custom entrypoint that starts both services
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]

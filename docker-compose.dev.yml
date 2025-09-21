@@ -1,29 +1,26 @@
 version: '3.8'
 
 services:
-  remote-cdp-browser:
+  remote-cdp-browser-dev:
     build:
       context: .
       dockerfile: Dockerfile
-    image: kaenova/remote-cdp-browser:latest
-    container_name: remote-cdp-browser
+    image: kaenova/remote-cdp-browser:dev
+    container_name: remote-cdp-browser-dev
     ports:
       # 3proxy port (HTTP proxy)
-      - "${PROXY_PORT:-3128}:3128"
+      - "3128:3128"
       # Chromium CDP port
-      - "${CHROME_PORT:-9222}:9222"
+      - "9222:9222"
     environment:
-      # Chrome settings
+      # Chrome settings (non-headless for development)
       - CHROME_PORT=9222
       - PROXY_PORT=3128
-      - HEADLESS=${HEADLESS:-true}
+      - HEADLESS=false
       - USER_DATA_DIR=/tmp/chrome-data
-      # 3proxy settings (if needed)
-      - PROXY_LOGIN=${PROXY_LOGIN:-}
-      - PROXY_PASSWORD=${PROXY_PASSWORD:-}
     volumes:
-      # Optional: persist Chrome user data
-      - chrome-data:/tmp/chrome-data
+      # Persist Chrome user data for development
+      - ./chrome-data:/tmp/chrome-data
     restart: unless-stopped
     security_opt:
       - seccomp:unconfined
@@ -36,10 +33,6 @@ services:
       timeout: 10s
       retries: 3
       start_period: 60s
-
-volumes:
-  chrome-data:
-    driver: local
 
 networks:
   proxy-network:
