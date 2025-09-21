@@ -29,13 +29,12 @@ RUN mkdir -p /app/data \
 ENV PUID=911 \
     PGID=1000 \
     TZ=Etc/UTC \
-    CHROME_CLI="--remote-debugging-port=9222 --remote-debugging-address=0.0.0.0 --no-sandbox --disable-setuid-sandbox --disable-dev-shm-usage"
+    CHROME_CLI="--remote-debugging-port=9222 --remote-debugging-address=0.0.0.0 --no-sandbox --disable-setuid-sandbox --disable-dev-shm-usage --headless --disable-gpu"
 
 # Environment variables for our app
 ENV CHROME_PORT=9222 \
     PROXY_PORT=8080 \
-    HEADLESS=true \
-    USER_DATA_DIR=/app/data
+    HEADLESS=true
 
 # Expose ports
 EXPOSE 8080 9222 3000

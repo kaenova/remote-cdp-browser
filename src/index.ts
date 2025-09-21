@@ -22,7 +22,6 @@ class RemoteCdpBrowser {
     this.chromeLauncher = new ChromeLauncher({
       port: this.config.chromePort,
       headless: this.config.headless,
-      userDataDir: "/tmp/remote-cdp-browser-chrome",
     });
 
     this.proxyServer = new ProxyServer({

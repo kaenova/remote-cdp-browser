@@ -4,7 +4,6 @@ import { existsSync } from "fs";
 export interface ChromeLauncherOptions {
   port?: number;
   headless?: boolean;
-  userDataDir?: string;
   additionalArgs?: string[];
 }
 
@@ -12,13 +11,11 @@ export class ChromeLauncher {
   private chromeProcess: Subprocess | null = null;
   private readonly port: number;
   private readonly headless: boolean;
-  private readonly userDataDir: string;
   private readonly additionalArgs: string[];
 
   constructor(options: ChromeLauncherOptions = {}) {
     this.port = options.port ?? 9222;
     this.headless = options.headless ?? false;
-    this.userDataDir = options.userDataDir ?? "/tmp/chrome-cdp";
     this.additionalArgs = options.additionalArgs ?? [];
   }
 
@@ -86,7 +83,6 @@ export class ChromeLauncher {
     const chromePath = this.getChromePath();
     const args = [
       `--remote-debugging-port=${this.port}`,
-      `--user-data-dir=${this.userDataDir}`,
       "--no-first-run",
       "--no-default-browser-check",
       "--disable-background-timer-throttling",
@@ -104,12 +100,11 @@ export class ChromeLauncher {
         "--disable-setuid-sandbox",
         "--disable-dev-shm-usage",
         "--disable-gpu",
-        "--remote-debugging-address=0.0.0.0"
+        "--remote-debugging-address=0.0.0.0",
+        "--headless" // Force headless in Docker containers
       );
-      console.log("Docker environment detected, added container-specific Chrome arguments");
-    }
-
-    if (this.headless) {
+      console.log("Docker environment detected, added container-specific Chrome arguments including headless mode");
+    } else if (this.headless) {
       args.push("--headless");
     }
 
