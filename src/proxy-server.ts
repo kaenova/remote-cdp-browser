@@ -61,10 +61,10 @@ export class ProxyServer {
     try {
       const url = new URL(request.url);
       
-      // Serve the test interface at the root path
-      if (url.pathname === "/" || url.pathname === "/index.html") {
-        return this.serveTestInterface();
-      }
+      // // Serve the test interface at the root path
+      // if (url.pathname === "/" || url.pathname === "/index.html") {
+      //   return this.serveTestInterface();
+      // }
       
       // Check if this is a WebSocket upgrade request
       if (request.headers.get("upgrade")?.toLowerCase() === "websocket") {
