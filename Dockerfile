@@ -34,12 +34,13 @@ ENV PUID=911 \
 # Environment variables for our app
 ENV CHROME_PORT=9222 \
     PROXY_PORT=8080 \
+    FORWARDER_PORT=8081 \
     HEADLESS=true \
     PROXY_USERNAME=proxy-user \
     PROXY_PASSWORD=proxy-pass
 
 # Expose ports
-EXPOSE 8080 9222 3000
+EXPOSE 8080 8081 9222 3000
 
 # Create startup script
 COPY <<EOF /app/start.sh

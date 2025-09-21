@@ -4,6 +4,7 @@ import { ProxyServer } from "./proxy-server.js";
 interface AppConfig {
   chromePort: number;
   proxyPort: number;
+  forwarderPort: number;
   headless: boolean;
   proxyUsername?: string;
   proxyPassword?: string;
@@ -12,13 +13,17 @@ interface AppConfig {
 class RemoteCdpBrowser {
   private chromeLauncher: ChromeLauncher;
   private proxyServer: ProxyServer;
+  private forwarderServer: ProxyServer;
   private config: AppConfig;
 
   constructor(config: Partial<AppConfig> = {}) {
     this.config = {
       chromePort: config.chromePort ?? 9222,
       proxyPort: config.proxyPort ?? 8080,
+      forwarderPort: config.forwarderPort ?? 8081,
       headless: config.headless ?? false,
+      proxyUsername: config.proxyUsername,
+      proxyPassword: config.proxyPassword,
     };
 
     this.chromeLauncher = new ChromeLauncher({
@@ -26,12 +31,18 @@ class RemoteCdpBrowser {
       headless: this.config.headless,
     });
 
+    // HTTP Proxy Server (with authentication)
     this.proxyServer = new ProxyServer({
       port: this.config.proxyPort,
-      targetHost: "localhost",
-      targetPort: this.config.chromePort,
       username: this.config.proxyUsername,
       password: this.config.proxyPassword,
+    });
+
+    // CDP Forwarder Server (no authentication, forwards to Chrome CDP)
+    this.forwarderServer = new ProxyServer({
+      port: this.config.forwarderPort,
+      targetHost: "localhost",
+      targetPort: this.config.chromePort,
     });
   }
 
@@ -41,7 +52,8 @@ class RemoteCdpBrowser {
   async start(): Promise<void> {
     console.log("🚀 Starting Remote CDP Browser...");
     console.log(`Chrome CDP Port: ${this.config.chromePort}`);
-    console.log(`Proxy Server Port: ${this.config.proxyPort}`);
+    console.log(`HTTP Proxy Server Port: ${this.config.proxyPort}`);
+    console.log(`CDP Forwarder Port: ${this.config.forwarderPort}`);
     console.log(`Headless: ${this.config.headless}`);
     if (this.config.proxyUsername && this.config.proxyPassword) {
       console.log(`Proxy Authentication: ${this.config.proxyUsername}:***`);
@@ -57,13 +69,15 @@ class RemoteCdpBrowser {
       // Wait a bit more for Chrome to be fully ready
       await new Promise(resolve => setTimeout(resolve, 1000));
       
-      // Start the proxy server
+      // Start both servers
       await this.proxyServer.start();
+      await this.forwarderServer.start();
 
       console.log("");
       console.log("✅ Remote CDP Browser is ready!");
-      console.log(`🌐 Proxy server: http://localhost:${this.config.proxyPort}`);
-      console.log(`🔧 Chrome CDP: http://localhost:${this.config.chromePort}`);
+      console.log(`🌐 HTTP Proxy server: http://localhost:${this.config.proxyPort}`);
+      console.log(`🔧 CDP Forwarder: http://localhost:${this.config.forwarderPort}`);
+      console.log(`🚀 Chrome CDP: http://localhost:${this.config.chromePort}`);
       console.log("");
       console.log("Press Ctrl+C to stop");
 
@@ -82,9 +96,12 @@ class RemoteCdpBrowser {
     console.log("🛑 Shutting down Remote CDP Browser...");
 
     try {
-      // Stop proxy server first
+      // Stop both servers first
       if (this.proxyServer.isRunning()) {
         await this.proxyServer.stop();
+      }
+      if (this.forwarderServer.isRunning()) {
+        await this.forwarderServer.stop();
       }
 
       // Then stop Chrome
@@ -104,14 +121,18 @@ class RemoteCdpBrowser {
   getStatus(): {
     chrome: boolean;
     proxy: boolean;
+    forwarder: boolean;
     chromeUrl: string;
     proxyUrl: string;
+    forwarderUrl: string;
   } {
     return {
       chrome: this.chromeLauncher.isRunning(),
       proxy: this.proxyServer.isRunning(),
+      forwarder: this.forwarderServer.isRunning(),
       chromeUrl: this.chromeLauncher.getCdpUrl(),
       proxyUrl: this.proxyServer.getUrl(),
+      forwarderUrl: this.forwarderServer.getUrl(),
     };
   }
 }
@@ -133,6 +154,9 @@ function parseArgs(): Partial<AppConfig> {
       case "--proxy-port":
         config.proxyPort = parseInt(args[++i]);
         break;
+      case "--forwarder-port":
+        config.forwarderPort = parseInt(args[++i]);
+        break;
       case "--headless":
         config.headless = args[++i] !== "false";
         break;
@@ -150,7 +174,8 @@ Usage: bun run src/index.ts [options]
 
 Options:
   --chrome-port <port>       Chrome CDP port (default: 9222)
-  --proxy-port <port>        Proxy server port (default: 8080) 
+  --proxy-port <port>        HTTP Proxy server port (default: 8080) 
+  --forwarder-port <port>    CDP Forwarder port (default: 8081)
   --headless <boolean>       Run Chrome in headless mode (default: false)
   --proxy-username <user>    Proxy authentication username
   --proxy-password <pass>    Proxy authentication password
@@ -158,7 +183,7 @@ Options:
 
 Examples:
   bun run src/index.ts
-  bun run src/index.ts --chrome-port 9223 --proxy-port 8081
+  bun run src/index.ts --chrome-port 9223 --proxy-port 8080 --forwarder-port 8082
   bun run src/index.ts --headless true
   bun run src/index.ts --proxy-username user --proxy-password pass
         `);
@@ -177,6 +202,15 @@ async function main(): Promise<void> {
   const config = parseArgs();
   
   // Override with environment variables if available
+  if (process.env.CHROME_PORT && !config.chromePort) {
+    config.chromePort = parseInt(process.env.CHROME_PORT);
+  }
+  if (process.env.PROXY_PORT && !config.proxyPort) {
+    config.proxyPort = parseInt(process.env.PROXY_PORT);
+  }
+  if (process.env.FORWARDER_PORT && !config.forwarderPort) {
+    config.forwarderPort = parseInt(process.env.FORWARDER_PORT);
+  }
   if (process.env.PROXY_USERNAME && !config.proxyUsername) {
     config.proxyUsername = process.env.PROXY_USERNAME;
   }
